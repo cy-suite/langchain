@@ -9,24 +9,26 @@ from io import StringIO
 from typing import Optional as Optional
 from typing import TypeVar, Union
 
+from typing_extensions import override
+
 from langchain_core.messages import BaseMessage
 from langchain_core.output_parsers.transform import BaseTransformOutputParser
 
 T = TypeVar("T")
 
 
-def droplastn(iter: Iterator[T], n: int) -> Iterator[T]:
+def _droplastn(iterator: Iterator[T], n: int) -> Iterator[T]:
     """Drop the last n elements of an iterator.
 
     Args:
-        iter: The iterator to drop elements from.
+        iterator: The iterator to drop elements from.
         n: The number of elements to drop.
 
     Yields:
         The elements of the iterator, except the last n elements.
     """
     buffer: deque[T] = deque()
-    for item in iter:
+    for item in iterator:
         buffer.append(item)
         if len(buffer) > n:
             yield buffer.popleft()
@@ -61,6 +63,7 @@ class ListOutputParser(BaseTransformOutputParser[list[str]]):
         """
         raise NotImplementedError
 
+    @override
     def _transform(
         self, input: Iterator[Union[str, BaseMessage]]
     ) -> Iterator[list[str]]:
@@ -78,7 +81,7 @@ class ListOutputParser(BaseTransformOutputParser[list[str]]):
             try:
                 done_idx = 0
                 # yield only complete parts
-                for m in droplastn(self.parse_iter(buffer), 1):
+                for m in _droplastn(self.parse_iter(buffer), 1):
                     done_idx = m.end()
                     yield [m.group(1)]
                 buffer = buffer[done_idx:]
@@ -93,6 +96,7 @@ class ListOutputParser(BaseTransformOutputParser[list[str]]):
         for part in self.parse(buffer):
             yield [part]
 
+    @override
     async def _atransform(
         self, input: AsyncIterator[Union[str, BaseMessage]]
     ) -> AsyncIterator[list[str]]:
@@ -110,7 +114,7 @@ class ListOutputParser(BaseTransformOutputParser[list[str]]):
             try:
                 done_idx = 0
                 # yield only complete parts
-                for m in droplastn(self.parse_iter(buffer), 1):
+                for m in _droplastn(self.parse_iter(buffer), 1):
                     done_idx = m.end()
                     yield [m.group(1)]
                 buffer = buffer[done_idx:]
