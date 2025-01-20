@@ -3,7 +3,6 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForChainRun,
     CallbackManagerForChainRun,
@@ -16,6 +15,17 @@ from pydantic import ConfigDict, Field
 from langchain.chains.base import Chain
 from langchain.evaluation.schema import PairwiseStringEvaluator, StringEvaluator
 from langchain.schema import RUN_KEY
+
+
+def _import_numpy() -> Any:
+    try:
+        import numpy as np
+
+        return np
+    except ImportError as e:
+        raise ImportError(
+            "Could not import numpy," "please install with `pip install numpy`."
+        ) from e
 
 
 def _embedding_factory() -> Embeddings:
@@ -154,7 +164,7 @@ class _EmbeddingDistanceChainMixin(Chain):
             raise ValueError(f"Invalid metric: {metric}")
 
     @staticmethod
-    def _cosine_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    def _cosine_distance(a: Any, b: Any) -> Any:
         """Compute the cosine distance between two vectors.
 
         Args:
@@ -175,7 +185,7 @@ class _EmbeddingDistanceChainMixin(Chain):
         return 1.0 - cosine_similarity(a, b)
 
     @staticmethod
-    def _euclidean_distance(a: np.ndarray, b: np.ndarray) -> np.floating:
+    def _euclidean_distance(a: Any, b: Any) -> Any:
         """Compute the Euclidean distance between two vectors.
 
         Args:
@@ -185,10 +195,11 @@ class _EmbeddingDistanceChainMixin(Chain):
         Returns:
             np.floating: The Euclidean distance.
         """
+        np = _import_numpy()
         return np.linalg.norm(a - b)
 
     @staticmethod
-    def _manhattan_distance(a: np.ndarray, b: np.ndarray) -> np.floating:
+    def _manhattan_distance(a: Any, b: Any) -> Any:
         """Compute the Manhattan distance between two vectors.
 
         Args:
@@ -198,10 +209,11 @@ class _EmbeddingDistanceChainMixin(Chain):
         Returns:
             np.floating: The Manhattan distance.
         """
+        np = _import_numpy()
         return np.sum(np.abs(a - b))
 
     @staticmethod
-    def _chebyshev_distance(a: np.ndarray, b: np.ndarray) -> np.floating:
+    def _chebyshev_distance(a: Any, b: Any) -> Any:
         """Compute the Chebyshev distance between two vectors.
 
         Args:
@@ -211,10 +223,11 @@ class _EmbeddingDistanceChainMixin(Chain):
         Returns:
             np.floating: The Chebyshev distance.
         """
+        np = _import_numpy()
         return np.max(np.abs(a - b))
 
     @staticmethod
-    def _hamming_distance(a: np.ndarray, b: np.ndarray) -> np.floating:
+    def _hamming_distance(a: Any, b: Any) -> Any:
         """Compute the Hamming distance between two vectors.
 
         Args:
@@ -224,9 +237,10 @@ class _EmbeddingDistanceChainMixin(Chain):
         Returns:
             np.floating: The Hamming distance.
         """
+        np = _import_numpy()
         return np.mean(a != b)
 
-    def _compute_score(self, vectors: np.ndarray) -> float:
+    def _compute_score(self, vectors: Any) -> float:
         """Compute the score based on the distance metric.
 
         Args:
@@ -288,6 +302,7 @@ class EmbeddingDistanceEvalChain(_EmbeddingDistanceChainMixin, StringEvaluator):
         Returns:
             Dict[str, Any]: The computed score.
         """
+        np = _import_numpy()
         vectors = np.array(
             self.embeddings.embed_documents([inputs["prediction"], inputs["reference"]])
         )
@@ -309,6 +324,7 @@ class EmbeddingDistanceEvalChain(_EmbeddingDistanceChainMixin, StringEvaluator):
         Returns:
             Dict[str, Any]: The computed score.
         """
+        np = _import_numpy()
         embedded = await self.embeddings.aembed_documents(
             [inputs["prediction"], inputs["reference"]]
         )
@@ -425,6 +441,7 @@ class PairwiseEmbeddingDistanceEvalChain(
         Returns:
             Dict[str, Any]: The computed score.
         """
+        np = _import_numpy()
         vectors = np.array(
             self.embeddings.embed_documents(
                 [inputs["prediction"], inputs["prediction_b"]]
@@ -448,6 +465,7 @@ class PairwiseEmbeddingDistanceEvalChain(
         Returns:
             Dict[str, Any]: The computed score.
         """
+        np = _import_numpy()
         embedded = await self.embeddings.aembed_documents(
             [inputs["prediction"], inputs["prediction_b"]]
         )
