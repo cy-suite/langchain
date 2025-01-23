@@ -1492,12 +1492,12 @@ async def test_chain_ordering() -> None:
 
     events = []
 
-    for _ in range(10):
-        try:
+    try:
+        for _ in range(10):
             next_chunk = await iterable.__anext__()
             events.append(next_chunk)
-        except Exception:
-            break
+    except Exception:
+        pass
 
     events = _with_nulled_run_id(events)
     for event in events:
@@ -1609,12 +1609,12 @@ async def test_event_stream_with_retry() -> None:
 
     events = []
 
-    for _ in range(10):
-        try:
+    try:
+        for _ in range(10):
             next_chunk = await iterable.__anext__()
             events.append(next_chunk)
-        except Exception:
-            break
+    except Exception:
+        pass
 
     events = _with_nulled_run_id(events)
     for event in events:
