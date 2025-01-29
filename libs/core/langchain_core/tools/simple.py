@@ -3,25 +3,28 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from inspect import signature
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Optional,
     Union,
 )
 
-from pydantic import BaseModel
-
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
 )
-from langchain_core.messages import ToolCall
 from langchain_core.runnables import RunnableConfig, run_in_executor
 from langchain_core.tools.base import (
     BaseTool,
     ToolException,
     _get_runnable_config_param,
 )
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from langchain_core.messages import ToolCall
 
 
 class Tool(BaseTool):
