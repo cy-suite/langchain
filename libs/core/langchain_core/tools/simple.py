@@ -10,6 +10,7 @@ from typing import (
 )
 
 from pydantic import BaseModel
+from typing_extensions import override
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
@@ -35,6 +36,7 @@ class Tool(BaseTool):
 
     # --- Runnable ---
 
+    @override
     async def ainvoke(
         self,
         input: Union[str, dict, ToolCall],

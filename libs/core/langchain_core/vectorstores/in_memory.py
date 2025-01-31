@@ -324,7 +324,7 @@ class InMemoryVectorStore(VectorStore):
         self,
         embedding: list[float],
         k: int = 4,
-        filter: Optional[Callable[[Document], bool]] = None,
+        filter: Optional[Callable[[Document], bool]] = None,  # noqa: A002
         **kwargs: Any,
     ) -> list[tuple[Document, float, list[float]]]:
         # get all docs with fixed order in list
@@ -364,7 +364,7 @@ class InMemoryVectorStore(VectorStore):
         self,
         embedding: list[float],
         k: int = 4,
-        filter: Optional[Callable[[Document], bool]] = None,
+        filter: Optional[Callable[[Document], bool]] = None,  # noqa: A002
         **kwargs: Any,
     ) -> list[tuple[Document, float]]:
         return [

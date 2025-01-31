@@ -19,7 +19,7 @@ from freezegun import freeze_time
 from pydantic import BaseModel, Field
 from pytest_mock import MockerFixture
 from syrupy import SnapshotAssertion
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, override
 
 from langchain_core.callbacks.manager import (
     Callbacks,
@@ -179,6 +179,7 @@ class FakeTracer(BaseTracer):
 
 
 class FakeRunnable(Runnable[str, int]):
+    @override
     def invoke(
         self,
         input: str,
@@ -191,6 +192,7 @@ class FakeRunnable(Runnable[str, int]):
 class FakeRunnableSerializable(RunnableSerializable[str, int]):
     hello: str = ""
 
+    @override
     def invoke(
         self,
         input: str,
@@ -566,8 +568,8 @@ def test_lambda_schemas(snapshot: SnapshotAssertion) -> None:
         "required": ["bye", "hello"],
     }
 
-    def get_value(input):  # type: ignore[no-untyped-def]
-        return input["variable_name"]
+    def get_value(value):  # type: ignore[no-untyped-def]
+        return value["variable_name"]
 
     assert RunnableLambda(get_value).get_input_jsonschema() == {
         "title": "get_value_input",
@@ -576,8 +578,8 @@ def test_lambda_schemas(snapshot: SnapshotAssertion) -> None:
         "required": ["variable_name"],
     }
 
-    async def aget_value(input):  # type: ignore[no-untyped-def]
-        return (input["variable_name"], input.get("another"))
+    async def aget_value(value):  # type: ignore[no-untyped-def]
+        return (value["variable_name"], value.get("another"))
 
     assert RunnableLambda(aget_value).get_input_jsonschema() == {
         "title": "aget_value_input",
@@ -589,11 +591,11 @@ def test_lambda_schemas(snapshot: SnapshotAssertion) -> None:
         "required": ["another", "variable_name"],
     }
 
-    async def aget_values(input):  # type: ignore[no-untyped-def]
+    async def aget_values(value):  # type: ignore[no-untyped-def]
         return {
-            "hello": input["variable_name"],
-            "bye": input["variable_name"],
-            "byebye": input["yo"],
+            "hello": value["variable_name"],
+            "bye": value["variable_name"],
+            "byebye": value["yo"],
         }
 
     assert RunnableLambda(aget_values).get_input_jsonschema() == {
@@ -615,11 +617,11 @@ def test_lambda_schemas(snapshot: SnapshotAssertion) -> None:
         bye: str
         byebye: int
 
-    async def aget_values_typed(input: InputType) -> OutputType:
+    async def aget_values_typed(value: InputType) -> OutputType:
         return {
-            "hello": input["variable_name"],
-            "bye": input["variable_name"],
-            "byebye": input["yo"],
+            "hello": value["variable_name"],
+            "bye": value["variable_name"],
+            "byebye": value["yo"],
         }
 
     assert _normalize_schema(
@@ -2419,7 +2421,7 @@ async def test_stream_log_retriever() -> None:
 
 @freeze_time("2023-01-01")
 async def test_stream_log_lists() -> None:
-    async def list_producer(input: AsyncIterator[Any]) -> AsyncIterator[AddableDict]:
+    async def list_producer(_values: AsyncIterator[Any]) -> AsyncIterator[AddableDict]:
         for i in range(4):
             yield AddableDict(alist=[str(i)])
 
@@ -2499,8 +2501,8 @@ async def test_prompt_with_llm_and_async_lambda(
     )
     llm = FakeListLLM(responses=["foo", "bar"])
 
-    async def passthrough(input: Any) -> Any:
-        return input
+    async def passthrough(value: Any) -> Any:
+        return value
 
     chain = prompt | llm | passthrough
 
@@ -2842,13 +2844,13 @@ async def test_higher_order_lambda_runnable(
         input={"question": lambda x: x["question"]},
     )
 
-    def router(input: dict[str, Any]) -> Runnable:
-        if input["key"] == "math":
+    def router(params: dict[str, Any]) -> Runnable:
+        if params["key"] == "math":
             return itemgetter("input") | math_chain
-        elif input["key"] == "english":
+        elif params["key"] == "english":
             return itemgetter("input") | english_chain
         else:
-            msg = f"Unknown key: {input['key']}"
+            msg = f"Unknown key: {params['key']}"
             raise ValueError(msg)
 
     chain: Runnable = input_map | router
@@ -2898,13 +2900,13 @@ async def test_higher_order_lambda_runnable(
     assert len(math_run.child_runs) == 3
 
     # Test ainvoke
-    async def arouter(input: dict[str, Any]) -> Runnable:
-        if input["key"] == "math":
+    async def arouter(params: dict[str, Any]) -> Runnable:
+        if params["key"] == "math":
             return itemgetter("input") | math_chain
-        elif input["key"] == "english":
+        elif params["key"] == "english":
             return itemgetter("input") | english_chain
         else:
-            msg = f"Unknown key: {input['key']}"
+            msg = f"Unknown key: {params['key']}"
             raise ValueError(msg)
 
     achain: Runnable = input_map | arouter
@@ -4010,6 +4012,7 @@ def test_seq_batch_return_exceptions(mocker: MockerFixture) -> None:
         def __init__(self, fail_starts_with: str) -> None:
             self.fail_starts_with = fail_starts_with
 
+        @override
         def invoke(
             self, input: Any, config: Optional[RunnableConfig] = None, **kwargs: Any
         ) -> Any:
@@ -4020,11 +4023,11 @@ def test_seq_batch_return_exceptions(mocker: MockerFixture) -> None:
             inputs: list[str],
         ) -> list:
             outputs: list[Any] = []
-            for input in inputs:
-                if input.startswith(self.fail_starts_with):
+            for string in inputs:
+                if string.startswith(self.fail_starts_with):
                     outputs.append(ValueError())
                 else:
-                    outputs.append(input + "a")
+                    outputs.append(string + "a")
             return outputs
 
         def batch(
@@ -4131,6 +4134,7 @@ async def test_seq_abatch_return_exceptions(mocker: MockerFixture) -> None:
         def __init__(self, fail_starts_with: str) -> None:
             self.fail_starts_with = fail_starts_with
 
+        @override
         def invoke(
             self, input: Any, config: Optional[RunnableConfig] = None, **kwargs: Any
         ) -> Any:
@@ -4141,11 +4145,11 @@ async def test_seq_abatch_return_exceptions(mocker: MockerFixture) -> None:
             inputs: list[str],
         ) -> list:
             outputs: list[Any] = []
-            for input in inputs:
-                if input.startswith(self.fail_starts_with):
+            for string in inputs:
+                if string.startswith(self.fail_starts_with):
                     outputs.append(ValueError())
                 else:
-                    outputs.append(input + "a")
+                    outputs.append(string + "a")
             return outputs
 
         async def abatch(
@@ -4654,7 +4658,7 @@ async def test_tool_from_runnable() -> None:
 async def test_runnable_gen() -> None:
     """Test that a generator can be used as a runnable."""
 
-    def gen(input: Iterator[Any]) -> Iterator[int]:
+    def gen(_values: Iterator[Any]) -> Iterator[int]:
         yield 1
         yield 2
         yield 3
@@ -4671,7 +4675,7 @@ async def test_runnable_gen() -> None:
     assert list(runnable.stream(None)) == [1, 2, 3]
     assert runnable.batch([None, None]) == [6, 6]
 
-    async def agen(input: AsyncIterator[Any]) -> AsyncIterator[int]:
+    async def agen(_values: AsyncIterator[Any]) -> AsyncIterator[int]:
         yield 1
         yield 2
         yield 3
@@ -4683,7 +4687,7 @@ async def test_runnable_gen() -> None:
     assert await arunnable.abatch([None, None]) == [6, 6]
 
     class AsyncGen:
-        async def __call__(self, input: AsyncIterator[Any]) -> AsyncIterator[int]:
+        async def __call__(self, _values: AsyncIterator[Any]) -> AsyncIterator[int]:
             yield 1
             yield 2
             yield 3
@@ -4706,7 +4710,7 @@ async def test_runnable_gen_context_config() -> None:
     """
     fake = RunnableLambda(len)
 
-    def gen(input: Iterator[Any]) -> Iterator[int]:
+    def gen(_values: Iterator[Any]) -> Iterator[int]:
         yield fake.invoke("a")
         yield fake.invoke("aa")
         yield fake.invoke("aaa")
@@ -4773,7 +4777,7 @@ async def test_runnable_gen_context_config() -> None:
         # Python 3.10 and below don't support running async tasks in a specific context
         return
 
-    async def agen(input: AsyncIterator[Any]) -> AsyncIterator[int]:
+    async def agen(_values: AsyncIterator[Any]) -> AsyncIterator[int]:
         yield await fake.ainvoke("a")
         yield await fake.ainvoke("aa")
         yield await fake.ainvoke("aaa")
@@ -4842,10 +4846,10 @@ async def test_runnable_iter_context_config() -> None:
     fake = RunnableLambda(len)
 
     @chain
-    def gen(input: str) -> Iterator[int]:
-        yield fake.invoke(input)
-        yield fake.invoke(input * 2)
-        yield fake.invoke(input * 3)
+    def gen(value: str) -> Iterator[int]:
+        yield fake.invoke(value)
+        yield fake.invoke(value * 2)
+        yield fake.invoke(value * 3)
 
     assert gen.get_input_jsonschema() == {
         "title": "gen_input",
@@ -4893,10 +4897,10 @@ async def test_runnable_iter_context_config() -> None:
         return
 
     @chain
-    async def agen(input: str) -> AsyncIterator[int]:
-        yield await fake.ainvoke(input)
-        yield await fake.ainvoke(input * 2)
-        yield await fake.ainvoke(input * 3)
+    async def agen(value: str) -> AsyncIterator[int]:
+        yield await fake.ainvoke(value)
+        yield await fake.ainvoke(value * 2)
+        yield await fake.ainvoke(value * 3)
 
     assert agen.get_input_jsonschema() == {
         "title": "agen_input",
@@ -4959,10 +4963,10 @@ async def test_runnable_lambda_context_config() -> None:
     fake = RunnableLambda(len)
 
     @chain
-    def fun(input: str) -> int:
-        output = fake.invoke(input)
-        output += fake.invoke(input * 2)
-        output += fake.invoke(input * 3)
+    def fun(value: str) -> int:
+        output = fake.invoke(value)
+        output += fake.invoke(value * 2)
+        output += fake.invoke(value * 3)
         return output
 
     assert fun.get_input_jsonschema() == {"title": "fun_input", "type": "string"}
@@ -5008,10 +5012,10 @@ async def test_runnable_lambda_context_config() -> None:
         return
 
     @chain
-    async def afun(input: str) -> int:
-        output = await fake.ainvoke(input)
-        output += await fake.ainvoke(input * 2)
-        output += await fake.ainvoke(input * 3)
+    async def afun(value: str) -> int:
+        output = await fake.ainvoke(value)
+        output += await fake.ainvoke(value * 2)
+        output += await fake.ainvoke(value * 3)
         return output
 
     assert afun.get_input_jsonschema() == {"title": "afun_input", "type": "string"}
@@ -5064,12 +5068,12 @@ async def test_runnable_gen_transform() -> None:
             for i in range(length):
                 yield i
 
-    def plus_one(input: Iterator[int]) -> Iterator[int]:
-        for i in input:
+    def plus_one(ints: Iterator[int]) -> Iterator[int]:
+        for i in ints:
             yield i + 1
 
-    async def aplus_one(input: AsyncIterator[int]) -> AsyncIterator[int]:
-        async for i in input:
+    async def aplus_one(ints: AsyncIterator[int]) -> AsyncIterator[int]:
+        async for i in ints:
             yield i + 1
 
     chain: Runnable = RunnableGenerator(gen_indexes, agen_indexes) | plus_one
@@ -5256,6 +5260,7 @@ def test_default_transform_with_dicts() -> None:
     """Test that default transform works with dicts."""
 
     class CustomRunnable(RunnableSerializable[Input, Output]):
+        @override
         def invoke(
             self, input: Input, config: Optional[RunnableConfig] = None, **kwargs: Any
         ) -> Output:
@@ -5277,6 +5282,7 @@ async def test_default_atransform_with_dicts() -> None:
     """Test that default transform works with dicts."""
 
     class CustomRunnable(RunnableSerializable[Input, Output]):
+        @override
         def invoke(
             self, input: Input, config: Optional[RunnableConfig] = None, **kwargs: Any
         ) -> Output:
