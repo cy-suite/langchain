@@ -21,6 +21,11 @@ from typing import (
     cast,
 )
 from urllib.parse import urlparse
+from enum import Enum
+from dataclasses import dataclass
+from abc import ABC
+from typing import Protocol
+from io import StringIO
 
 import numpy
 import numpy as np
@@ -240,6 +245,76 @@ def _merge_text_and_extras(extras: list[str], text_from_page: str) -> str:
     return all_text
 
 
+class PDFEncoding(str, Enum):
+    """PDF document encoding options."""
+    
+    UTF8 = 'utf-8'
+    SHIFT_JIS = 'shift_jis'
+    EUC_JP = 'euc_jp'
+    ISO2022_JP = 'iso2022_jp'
+    UTF16 = 'utf-16'
+    
+    @classmethod
+    def get_default(cls) -> 'PDFEncoding':
+        """Get default encoding."""
+        return cls.UTF8
+
+@dataclass
+class PDFEncodingConfig:
+    """Configuration for PDF encoding handling."""
+    
+    encoding: PDFEncoding = PDFEncoding.get_default()
+    fallback_encodings: list[PDFEncoding] = None
+    error_handler: Literal['strict', 'ignore', 'replace'] = 'replace'
+    
+    def __post_init__(self):
+        if isinstance(self.encoding, str):
+            self.encoding = PDFEncoding(self.encoding)
+        if self.fallback_encodings is None:
+            self.fallback_encodings = []
+        self.fallback_encodings = [
+            PDFEncoding(enc) if isinstance(enc, str) else enc
+            for enc in self.fallback_encodings
+        ]
+
+class PDFTextProcessor(Protocol):
+    """Protocol for PDF text processing."""
+    
+    def process_text(self, text: str, encoding_config: PDFEncodingConfig) -> str:
+        """Process extracted text with encoding configuration."""
+        ...
+
+class DefaultPDFTextProcessor:
+    """Default implementation of PDFTextProcessor."""
+    
+    def process_text(self, text: str, encoding_config: PDFEncodingConfig) -> str:
+        """Process text with fallback encodings."""
+        if not text:
+            return text
+            
+        try:
+            # Try primary encoding
+            return text.encode(
+                encoding_config.encoding,
+                errors=encoding_config.error_handler
+            ).decode(encoding_config.encoding)
+        except UnicodeError:
+            # Try fallback encodings
+            for fallback in encoding_config.fallback_encodings:
+                try:
+                    return text.encode(
+                        fallback,
+                        errors=encoding_config.error_handler
+                    ).decode(fallback)
+                except UnicodeError:
+                    continue
+            
+            # If all fallbacks fail, use original encoding with error handler
+            return text.encode(
+                encoding_config.encoding,
+                errors=encoding_config.error_handler
+            ).decode(encoding_config.encoding)
+
 class PyPDFParser(BaseBlobParser):
     """Parse a blob from a PDF using `pypdf` library.
 
@@ -318,7 +393,7 @@ class PyPDFParser(BaseBlobParser):
                 pointing to (`![body)(#)`]
                 - "html-img" = wrap the content as the `alt` text of an tag and link to
                 (`<img alt="{body}" src="#"/>`)
-            extraction_mode: “plain” for legacy functionality, “layout” extract text
+            extraction_mode: "plain" for legacy functionality, "layout" extract text
                 in a fixed width format that closely adheres to the rendered layout in
                 the source pdf.
             extraction_kwargs: Optional additional parameters for the extraction
@@ -466,23 +541,43 @@ class PyPDFParser(BaseBlobParser):
 class PDFMinerParser(BaseBlobParser):
     """Parse `PDF` using `PDFMiner`."""
 
-    def __init__(self, extract_images: bool = False, *, concatenate_pages: bool = True):
+    def __init__(
+        self,
+        extract_images: bool = False,
+        *,
+        concatenate_pages: bool = True,
+        encoding_config: Optional[PDFEncodingConfig] = None,
+        text_processor: Optional[PDFTextProcessor] = None,
+    ):
         """Initialize a parser based on PDFMiner.
 
         Args:
             extract_images: Whether to extract images from PDF.
             concatenate_pages: If True, concatenate all PDF pages into one a single
                                document. Otherwise, return one document per page.
+            encoding_config: Configuration for text encoding handling.
+            text_processor: Custom text processor for encoding handling.
         """
         self.extract_images = extract_images
         self.concatenate_pages = concatenate_pages
+        self._encoding_config = encoding_config or PDFEncodingConfig()
+        self._text_processor = text_processor or DefaultPDFTextProcessor()
+
+    def _process_text(self, text: str) -> str:
+        """Process extracted text using configured encoding settings."""
+        return self._text_processor.process_text(text, self._encoding_config)
 
     def lazy_parse(self, blob: Blob) -> Iterator[Document]:  # type: ignore[valid-type]
         """Lazily parse the blob."""
-
         if not self.extract_images:
             try:
                 from pdfminer.high_level import extract_text
+                from pdfminer.layout import LAParams
+                from pdfminer.pdfinterp import PDFResourceManager
+                from pdfminer.converter import TextConverter
+                from pdfminer.pdfinterp import PDFPageInterpreter
+                from pdfminer.pdfpage import PDFPage
+                import io
             except ImportError:
                 raise ImportError(
                     "`pdfminer` package not found, please install it with "
@@ -491,93 +586,77 @@ class PDFMinerParser(BaseBlobParser):
 
             with blob.as_bytes_io() as pdf_file_obj:  # type: ignore[attr-defined]
                 if self.concatenate_pages:
-                    text = extract_text(pdf_file_obj)
+                    resource_manager = PDFResourceManager()
+                    ret_str = io.StringIO()
+                    device = TextConverter(
+                        resource_manager,
+                        ret_str,
+                        codec=str(self._encoding_config.encoding),
+                        laparams=LAParams()
+                    )
+                    interpreter = PDFPageInterpreter(resource_manager, device)
+                    
+                    for page in PDFPage.get_pages(pdf_file_obj):
+                        interpreter.process_page(page)
+                    
+                    text = ret_str.getvalue()
+                    ret_str.close()
+                    device.close()
+                    
+                    # エンコーディング処理を適用
+                    text = self._process_text(text)
+                    
                     metadata = {"source": blob.source}  # type: ignore[attr-defined]
                     yield Document(page_content=text, metadata=metadata)
                 else:
-                    from pdfminer.pdfpage import PDFPage
-
-                    pages = PDFPage.get_pages(pdf_file_obj)
-                    for i, _ in enumerate(pages):
-                        text = extract_text(pdf_file_obj, page_numbers=[i])
+                    resource_manager = PDFResourceManager()
+                    ret_str = io.StringIO()
+                    device = TextConverter(
+                        resource_manager,
+                        ret_str,
+                        codec=str(self._encoding_config.encoding),
+                        laparams=LAParams()
+                    )
+                    interpreter = PDFPageInterpreter(resource_manager, device)
+                    
+                    for i, page in enumerate(PDFPage.get_pages(pdf_file_obj)):
+                        ret_str.truncate(0)
+                        ret_str.seek(0)
+                        interpreter.process_page(page)
+                        text = ret_str.getvalue()
+                        
+                        # エンコーディング処理を適用
+                        text = self._process_text(text)
+                        
                         metadata = {"source": blob.source, "page": str(i)}  # type: ignore[attr-defined]
                         yield Document(page_content=text, metadata=metadata)
+                    
+                    ret_str.close()
+                    device.close()
         else:
-            import io
-
-            from pdfminer.converter import PDFPageAggregator, TextConverter
-            from pdfminer.layout import LAParams
-            from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
-            from pdfminer.pdfpage import PDFPage
-
-            text_io = io.StringIO()
-            with blob.as_bytes_io() as pdf_file_obj:  # type: ignore[attr-defined]
-                pages = PDFPage.get_pages(pdf_file_obj)
-                rsrcmgr = PDFResourceManager()
-                device_for_text = TextConverter(rsrcmgr, text_io, laparams=LAParams())
-                device_for_image = PDFPageAggregator(rsrcmgr, laparams=LAParams())
-                interpreter_for_text = PDFPageInterpreter(rsrcmgr, device_for_text)
-                interpreter_for_image = PDFPageInterpreter(rsrcmgr, device_for_image)
-                for i, page in enumerate(pages):
-                    interpreter_for_text.process_page(page)
-                    interpreter_for_image.process_page(page)
-                    content = text_io.getvalue() + self._extract_images_from_page(
-                        device_for_image.get_result()
-                    )
-                    text_io.truncate(0)
-                    text_io.seek(0)
-                    metadata = {"source": blob.source, "page": str(i)}  # type: ignore[attr-defined]
-                    yield Document(page_content=content, metadata=metadata)
-
-    def _extract_images_from_page(self, page: pdfminer.layout.LTPage) -> str:
-        """Extract images from page and get the text with RapidOCR."""
-        import pdfminer
-
-        def get_image(layout_object: Any) -> Any:
-            if isinstance(layout_object, pdfminer.layout.LTImage):
-                return layout_object
-            if isinstance(layout_object, pdfminer.layout.LTContainer):
-                for child in layout_object:
-                    return get_image(child)
-            else:
-                return None
-
-        images = []
-
-        for img in filter(bool, map(get_image, page)):
-            img_filter = img.stream["Filter"]
-            if isinstance(img_filter, list):
-                filter_names = [f.name for f in img_filter]
-            else:
-                filter_names = [img_filter.name]
-
-            without_loss = any(
-                name in _PDF_FILTER_WITHOUT_LOSS for name in filter_names
-            )
-            with_loss = any(name in _PDF_FILTER_WITH_LOSS for name in filter_names)
-            non_matching = {name for name in filter_names} - {
-                *_PDF_FILTER_WITHOUT_LOSS,
-                *_PDF_FILTER_WITH_LOSS,
-            }
-
-            if without_loss and with_loss:
-                warnings.warn(
-                    "Image has both lossy and lossless filters. Defaulting to lossless"
+            try:
+                import pdfminer
+                import textractor.entities.document as textractor
+                from pdfminer.high_level import extract_text_to_fp
+                from pdfminer.layout import LAParams
+            except ImportError:
+                raise ImportError(
+                    "Could not import pdfminer python package. "
+                    "Please install it with `pip install pdfminer.six`"
                 )
-
-            if non_matching:
-                warnings.warn(f"Unknown PDF Filter(s): {non_matching}")
-
-            if without_loss:
-                images.append(
-                    np.frombuffer(img.stream.get_data(), dtype=np.uint8).reshape(
-                        img.stream["Height"], img.stream["Width"], -1
-                    )
+            output_string = StringIO()
+            with blob.as_bytes_io() as pdf_file_obj:
+                extract_text_to_fp(
+                    pdf_file_obj,
+                    output_string,
+                    laparams=LAParams(),
+                    output_type="text",
+                    codec=str(self._encoding_config.encoding),
                 )
-            elif with_loss:
-                images.append(img.stream.get_data())
-
-        return extract_from_images_with_rapidocr(images)
+            text = output_string.getvalue()
+            text = self._process_text(text)
+            metadata = {"source": blob.source}
+            yield Document(page_content=text, metadata=metadata)
 
 
 class PyMuPDFParser(BaseBlobParser):
@@ -1068,16 +1147,19 @@ class PDFPlumberParser(BaseBlobParser):
                             Image.frombytes(
                                 "1",
                                 (img["stream"]["Width"], img["stream"]["Height"]),
-                                img["stream"].get_data(),
+                                img["stream"].get_data()
                             ).convert("L")
                         )
-                    )
                 else:
                     images.append(
-                        np.frombuffer(img["stream"].get_data(), dtype=np.uint8).reshape(
-                            img["stream"]["Height"], img["stream"]["Width"], -1
+                        np.frombuffer(
+                            img["stream"].get_data(), 
+                            dtype=np.uint8
+                        ).reshape(
+                            img["stream"]["Height"], 
+                            img["stream"]["Width"], 
+                            -1
                         )
-                    )
             elif img["stream"]["Filter"].name in _PDF_FILTER_WITH_LOSS:
                 images.append(img["stream"].get_data())
             else:
