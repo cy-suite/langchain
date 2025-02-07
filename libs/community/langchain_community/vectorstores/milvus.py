@@ -953,7 +953,7 @@ class Milvus(VectorStore):
         if isinstance(ids, list) and len(ids) > 0:
             if expr is not None:
                 logger.warning(
-                    "Both ids and expr are provided. " "Ignore expr and delete by ids."
+                    "Both ids and expr are provided. Ignore expr and delete by ids."
                 )
             expr = f"{self._primary_field} in {ids}"
         else:

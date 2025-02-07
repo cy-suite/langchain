@@ -90,7 +90,7 @@ class InfinispanVS(VectorStore):
             self._textfield = self._configuration.get("text_field", "text")
         else:
             warnings.warn(
-                "`textfield` is deprecated. Please use `text_field` " "param.",
+                "`textfield` is deprecated. Please use `text_field` param.",
                 DeprecationWarning,
             )
         self._vectorfield = self._configuration.get("vectorfield", "")
@@ -98,7 +98,7 @@ class InfinispanVS(VectorStore):
             self._vectorfield = self._configuration.get("vector_field", "vector")
         else:
             warnings.warn(
-                "`vectorfield` is deprecated. Please use `vector_field` " "param.",
+                "`vectorfield` is deprecated. Please use `vector_field` param.",
                 DeprecationWarning,
             )
         self._to_content = self._configuration.get(

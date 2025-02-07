@@ -1225,8 +1225,7 @@ class PDFPlumberParser(BaseBlobParser):
             import PIL  # noqa:F401
         except ImportError:
             raise ImportError(
-                "pillow package not found, please install it with"
-                " `pip install pillow`"
+                "pillow package not found, please install it with `pip install pillow`"
             )
         self.text_kwargs = text_kwargs or {}
         self.dedupe = dedupe
