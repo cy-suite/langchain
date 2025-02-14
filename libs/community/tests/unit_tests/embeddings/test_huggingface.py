@@ -12,13 +12,13 @@ def test_hugginggface_inferenceapi_embedding_documents_init() -> None:
 
 
 @pytest.fixture
-def embedding_component():
+def embedding_component() -> HuggingFaceInferenceAPIEmbeddings:
     return HuggingFaceInferenceAPIEmbeddings(api_key="test-key",
                                              api_url="https://api-inference.huggingface.co",
                                              model_name="BAAI/bge-large-en-v1.5")
 
 
-def test_check_for_api_errors_no_error(embedding_component):
+def test_check_for_api_errors_no_error(embedding_component) -> None:
     """Test that no error is raised when the API response is valid."""
     response = MagicMock()
     response.json.return_value = {"data": [0.1, 0.2, 0.3]}  # Mock a successful response
@@ -29,7 +29,7 @@ def test_check_for_api_errors_no_error(embedding_component):
         pytest.fail("Unexpected exception raised for valid response")
 
 
-def test_check_for_api_errors_with_error(embedding_component):
+def test_check_for_api_errors_with_error(embedding_component) -> None:
     """Test that the correct ValueError is raised for an API error response."""
     response = MagicMock()
     response.json.return_value = {
@@ -41,7 +41,7 @@ def test_check_for_api_errors_with_error(embedding_component):
         embedding_component._check_for_api_errors(response)
 
 
-def test_check_for_api_errors_invalid_json(embedding_component):
+def test_check_for_api_errors_invalid_json(embedding_component) -> None:
     """Test that a ValueError is raised when the response contains invalid JSON."""
     response = MagicMock()
     response.json.side_effect = requests.JSONDecodeError("Invalid JSON", "", 0)  # Simulate invalid JSON
