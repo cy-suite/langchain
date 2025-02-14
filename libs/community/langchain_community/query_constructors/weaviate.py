@@ -1,3 +1,4 @@
+import warnings
 from datetime import datetime
 from typing import Dict, Tuple, Union
 
@@ -8,6 +9,13 @@ from langchain_core.structured_query import (
     Operator,
     StructuredQuery,
     Visitor,
+)
+
+warnings.warn(
+    "The weaviate related classes in the langchain_community package are deprecated. "
+    "Please download and install the langchain-weaviate package.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
 
